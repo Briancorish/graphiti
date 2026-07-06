@@ -158,7 +158,19 @@ class FalkorDriver(GraphDriver):
             # If a FalkorDB instance is provided, use it directly
             self.client = falkor_db
         else:
-            self.client = FalkorDB(host=host, port=port, username=username, password=password)
+            # socket_keepalive + health_check_interval protect pooled connections
+            # against silent idle drops on virtual private networks (e.g. Railway):
+            # LLM extraction leaves the connection idle for 60s+, after which the
+            # first write would otherwise hit a dead socket and raise
+            # redis.exceptions.ConnectionError('Connection closed by server.').
+            self.client = FalkorDB(
+                host=host,
+                port=port,
+                username=username,
+                password=password,
+                socket_keepalive=True,
+                health_check_interval=25,
+            )
 
         # Instantiate FalkorDB operations
         self._entity_node_ops = FalkorEntityNodeOperations()
@@ -173,12 +185,17 @@ class FalkorDriver(GraphDriver):
         self._search_ops = FalkorSearchOperations()
         self._graph_ops = FalkorGraphMaintenanceOperations()
 
-        # Schedule the indices and constraints to be built
+        # Schedule the indices and constraints to be built.
+        # Keep a handle to the task: close() awaits it so a client shutdown can
+        # no longer sever an in-flight index build mid-query (which surfaced as
+        # noisy "Connection closed by server." + "Task exception was never
+        # retrieved" errors on every request-scoped driver teardown).
+        self._index_build_task: asyncio.Task | None = None
         try:
             # Try to get the current event loop
             loop = asyncio.get_running_loop()
             # Schedule the build_indices_and_constraints to run
-            loop.create_task(self.build_indices_and_constraints())
+            self._index_build_task = loop.create_task(self.build_indices_and_constraints())
         except RuntimeError:
             # No event loop running, this will be handled later
             pass
@@ -274,6 +291,14 @@ class FalkorDriver(GraphDriver):
 
     async def close(self) -> None:
         """Close the driver connection."""
+        # Let a pending index build finish before tearing down the connection,
+        # so it is not severed mid-query.
+        index_task = getattr(self, '_index_build_task', None)
+        if index_task is not None and not index_task.done():
+            try:
+                await index_task
+            except Exception as e:
+                logger.warning(f'Index build task failed during close: {e}')
         if hasattr(self.client, 'aclose'):
             await self.client.aclose()  # type: ignore[reportUnknownMemberType]
         elif hasattr(self.client.connection, 'aclose'):
