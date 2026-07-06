@@ -2,7 +2,10 @@
 FROM python:3.12-slim
 
 # Inherit build arguments for labels
-ARG GRAPHITI_VERSION
+# Pinned: the unpinned `uv pip install --upgrade` was silently pulling the
+# latest graphiti-core (and transitively bumping openai/neo4j/pydantic majors)
+# on every uncached build. Bump this deliberately, never implicitly.
+ARG GRAPHITI_VERSION=0.29.2
 ARG BUILD_DATE
 ARG VCS_REF
 
@@ -59,6 +62,16 @@ RUN --mount=type=cache,target=/root/.cache/uv,id=s/a5e8d61f-bfe2-4d50-be77-ef89c
             uv pip install --upgrade graphiti-core; \
         fi; \
     fi
+
+# Overlay local FalkorDB fixes onto the installed graphiti-core
+# (graphiti-core is installed from PyPI above — the repo's graphiti_core/
+# source tree is NOT what runs, so library fixes must be copied over the
+# site-packages install). Fixes: single-group read routing (upstream
+# #1161/#1325, unmerged PRs #1170/#1326) and driver connection hardening.
+# Drop these two COPYs when a released graphiti-core contains the fixes
+# and the GRAPHITI_VERSION pin is bumped past it.
+COPY ./graphiti_core/decorators.py /app/.venv/lib/python3.12/site-packages/graphiti_core/decorators.py
+COPY ./graphiti_core/driver/falkordb_driver.py /app/.venv/lib/python3.12/site-packages/graphiti_core/driver/falkordb_driver.py
 
 # Change ownership to app user
 RUN chown -R app:app /app
