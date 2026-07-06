@@ -44,13 +44,17 @@ def handle_multiple_group_ids(func: F) -> F:
         if group_ids is None and group_ids_pos is not None and len(args) > group_ids_pos:
             group_ids = args[group_ids_pos]
 
-        # Only handle FalkorDB with multiple group_ids
+        # Handle FalkorDB whenever group_ids are provided (including a single one).
+        # FalkorDB is multi-tenant: writes land in a graph named after the group_id,
+        # so reads must be routed to that same graph. The previous `> 1` condition
+        # sent single-group reads to the default graph, returning empty results
+        # (upstream issues #1161 / #1325).
         if (
             hasattr(self, 'clients')
             and hasattr(self.clients, 'driver')
             and self.clients.driver.provider == GraphProvider.FALKORDB
             and group_ids
-            and len(group_ids) > 1
+            and len(group_ids) >= 1
         ):
             # Execute for each group_id concurrently
             driver = self.clients.driver
