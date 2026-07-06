@@ -7,7 +7,9 @@ from fastapi import APIRouter, FastAPI, status
 from graphiti_core.nodes import EpisodeType  # type: ignore
 from graphiti_core.utils.maintenance.graph_data_operations import clear_data  # type: ignore
 
+from graph_service.config import get_settings
 from graph_service.dto import AddEntityNodeRequest, AddMessagesRequest, Message, Result
+from graph_service.ontology import EDGE_TYPE_MAP, EDGE_TYPES, ENTITY_TYPES
 from graph_service.zep_graphiti import ZepGraphitiDep
 
 logger = logging.getLogger(__name__)
@@ -66,14 +68,30 @@ async def add_messages(
     graphiti: ZepGraphitiDep,
 ):
     async def add_messages_task(m: Message):
+        # Only wrap the body as 'role(role_type): content' when a real speaker
+        # role is supplied. The unconditional wrapper turned non-dialogue
+        # payloads into fake dialogue — the message-extraction prompt reads the
+        # text before the first colon as the SPEAKER, minting pseudo-speaker
+        # entities (e.g. 'knowledge-bundle', 'call-transcript') on every episode.
+        if m.role:
+            episode_body = f'{m.role}({m.role_type}): {m.content}'
+        else:
+            episode_body = m.content
+        # Typed ontology (graph_service/ontology.py): constrains extraction to
+        # the shared bundle/graph node + edge types. ONTOLOGY_ENABLED=false
+        # reverts to untyped extraction without a rollback build.
+        ontology_on = get_settings().ontology_enabled
         await graphiti.add_episode(
             uuid=m.uuid,
             group_id=request.group_id,
             name=m.name,
-            episode_body=f'{m.role or ""}({m.role_type}): {m.content}',
+            episode_body=episode_body,
             reference_time=m.timestamp,
-            source=EpisodeType.message,
+            source=EpisodeType.from_str(m.source),
             source_description=m.source_description,
+            entity_types=ENTITY_TYPES if ontology_on else None,
+            edge_types=EDGE_TYPES if ontology_on else None,
+            edge_type_map=EDGE_TYPE_MAP if ontology_on else None,
         )
 
     for m in request.messages:

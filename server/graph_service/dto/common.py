@@ -26,3 +26,11 @@ class Message(BaseModel):
     source_description: str = Field(
         default='', description='The description of the source of the message'
     )
+    source: Literal['message', 'text', 'json'] = Field(
+        default='message',
+        description=(
+            'The episode source type: message (speaker-prefixed dialogue, e.g. '
+            '"Name: utterance" lines), text (plain prose ingested verbatim), or '
+            'json (structured data). Selects the extraction prompt Graphiti uses.'
+        ),
+    )

@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     falkordb_port: int | None = Field(None)
     falkordb_database: str | None = Field(None)
     db_backend: str = Field('neo4j')
+    # Bearer token required on every route except /healthcheck. Unset = open
+    # (a loud startup warning is logged) so the patch can deploy before the
+    # variable exists and auth can be dropped without a rollback build.
+    graphiti_token: str | None = Field(None)
+    # Typed extraction ontology (graph_service/ontology.py) on /messages.
+    # Set ONTOLOGY_ENABLED=false to fall back to untyped extraction without
+    # a rollback build.
+    ontology_enabled: bool = Field(True)
 
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
