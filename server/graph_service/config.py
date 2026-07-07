@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     neo4j_password: str | None = Field(None)
     falkordb_host: str | None = Field(None)
     falkordb_port: int | None = Field(None)
+    falkordb_password: str | None = Field(None)
     falkordb_database: str | None = Field(None)
     db_backend: str = Field('neo4j')
     # Bearer token required on every route except /healthcheck. Unset = open
