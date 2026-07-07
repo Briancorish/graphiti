@@ -84,8 +84,9 @@ def _create_graphiti_client(settings: ZepEnvDep) -> ZepGraphiti:
         from graphiti_core.driver.falkordb_driver import FalkorDriver
 
         driver = FalkorDriver(  # type: ignore
-            host=settings.falkordb_host or 'localhost',  # type: ignore
+            host=settings.falkordb_host or 'falkordb-autj.railway.internal',  # type: ignore
             port=settings.falkordb_port or 6379,  # type: ignore
+            password=settings.falkordb_password,  # type: ignore
             database=settings.falkordb_database or 'default_db',  # type: ignore
         )
         return ZepGraphiti(graph_driver=driver)  # type: ignore
