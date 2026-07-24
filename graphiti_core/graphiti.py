@@ -1095,11 +1095,38 @@ class Graphiti:
                     else await EpisodicNode.get_by_uuids(self.driver, previous_episode_uuids)
                 )
 
-                # Get or create episode
-                episode = (
-                    await EpisodicNode.get_by_uuid(self.driver, uuid)
-                    if uuid is not None
-                    else EpisodicNode(
+                # Get or create episode. Upstream treats a supplied uuid as
+                # update-only: EpisodicNode.get_by_uuid raises
+                # NodeNotFoundError for a first-time episode, so every
+                # deterministic-uuid insert (idempotent ingestion,
+                # supersede-in-place) is accepted by the API and then
+                # silently dropped by the ingest worker. Fork fix: a missing
+                # uuid CREATES the episode with that uuid, and an existing
+                # one has the new payload applied so a same-uuid re-POST
+                # supersedes the content instead of re-extracting the stale
+                # stored body.
+                if uuid is not None:
+                    try:
+                        episode = await EpisodicNode.get_by_uuid(self.driver, uuid)
+                        episode.name = name
+                        episode.source = source
+                        episode.content = episode_body
+                        episode.source_description = source_description
+                        episode.valid_at = reference_time
+                    except NodeNotFoundError:
+                        episode = EpisodicNode(
+                            uuid=uuid,
+                            name=name,
+                            group_id=group_id,
+                            labels=[],
+                            source=source,
+                            content=episode_body,
+                            source_description=source_description,
+                            created_at=now,
+                            valid_at=reference_time,
+                        )
+                else:
+                    episode = EpisodicNode(
                         name=name,
                         group_id=group_id,
                         labels=[],
@@ -1109,7 +1136,6 @@ class Graphiti:
                         created_at=now,
                         valid_at=reference_time,
                     )
-                )
 
                 # Create default edge type map
                 edge_type_map_default = (
